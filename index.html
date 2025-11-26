@@ -1,0 +1,1244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mini Ballers Sticker Tracker</title>
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#FF8C00">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    
+    <link rel="apple-touch-icon" sizes="180x180" href="https://images.squarespace-cdn.com/content/v1/65b2d4a1c678dd102a9e1842/568740d1-fae0-4b0c-888d-3a4bd483dcd5/Logo+circle+transparent.png?format=500w">
+    <link rel="icon" type="image/png" sizes="32x32" href="https://images.squarespace-cdn.com/content/v1/65b2d4a1c678dd102a9e1842/568740d1-fae0-4b0c-888d-3a4bd483dcd5/Logo+circle+transparent.png?format=500w">
+    <link rel="icon" type="image/png" sizes="16x16" href="https://images.squarespace-cdn.com/content/v1/65b2d4a1c678dd102a9e1842/568740d1-fae0-4b0c-888d-3a4bd483dcd5/Logo+circle+transparent.png?format=500w">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .bg-primary { background-color: #000000; }
+        .text-accent { color: #FF8C00; }
+        .border-accent { border-color: #FF8C00; }
+        .fill-accent { fill: #FF8C00; }
+        .btn-primary {
+            background-color: #FF8C00;
+            color: #000000;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            font-weight: 700;
+            transition: all 0.15s ease-in-out;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+        }
+        .btn-primary:hover {
+            background-color: #FF9933;
+            box-shadow: 0 10px 15px -3px rgba(255, 140, 0, 0.3), 0 4px 6px -4px rgba(255, 140, 0, 0.3);
+        }
+        .container-card {
+            background-color: #111111;
+            border: 2px solid #FF8C00;
+            border-radius: 1rem;
+            box-shadow: 0 20px 25px -5px rgba(255, 140, 0, 0.2), 0 8px 10px -6px rgba(255, 140, 0, 0.2);
+        }
+        /* Custom scrollbar for dark mode */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #333333; }
+        ::-webkit-scrollbar-thumb { background: #FF8C00; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #FF9933; }
+
+        /* --- STICKER STYLING --- */
+        .sticker-logo {
+            /* Now using the actual public logo URL for the sticker background */
+            background-image: url('https://images.squarespace-cdn.com/content/v1/65b2d4a1c678dd102a9e1842/568740d1-fae0-4b0c-888d-3a4bd483dcd5/Logo+circle+transparent.png?format=500w');
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+            text-indent: -9999px; 
+            overflow: hidden;
+            border-radius: 50%;
+            width: 40px; 
+            height: 40px;
+            box-shadow: inset 0 0 10px rgba(255, 140, 0, 0.5); 
+            background-color: #1c1c1c; /* Background for transparency fill */
+        }
+        
+        /* --- PROGRESS CIRCLE STYLING --- */
+        .progress-circle {
+            --size: 60px; 
+            --border-width: 6px; 
+            --progress: 0%; 
+            
+            width: var(--size);
+            height: var(--size);
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            background: 
+                conic-gradient(var(--fill-color) var(--progress), #333333 var(--progress)); 
+        }
+        .progress-circle::before {
+            content: '';
+            position: absolute;
+            width: calc(var(--size) - 2 * var(--border-width));
+            height: calc(var(--size) - 2 * var(--border-width));
+            background: #111111; 
+            border-radius: 50%;
+        }
+        .progress-text {
+            position: relative;
+            z-index: 10;
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: #ffffff;
+        }
+    </style>
+</head>
+<body class="bg-primary text-gray-100 min-h-screen flex items-center justify-center p-4">
+    <div id="app" class="w-full max-w-lg md:max-w-3xl">
+        <div class="text-center p-8">
+            <div class="text-accent font-extrabold text-2xl animate-pulse">Loading Application...</div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, getDocs, arrayUnion, arrayRemove, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // ==========================================================
+        // --- GLOBAL CONFIGURATION ---
+        // The coach password will be loaded from and saved to Firestore for persistence.
+        let coachPassword = null; 
+        // ==========================================================
+        
+        // Global Firestore & Auth instances
+        let db;
+        let auth;
+        let userId = null;
+        let isAuthReady = false; 
+        let isCoachReady = false; 
+        
+        // --- FALLBACK CONFIGURATION FOR PUBLIC DEPLOYMENT (e.g., GitHub Pages) ---
+        // If the canvas environment variables (__app_id, etc.) are not available (which is true on GitHub Pages),
+        // we use a dummy config to allow the app structure to load.
+        // NOTE: Database operations will fail with this dummy config.
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'mini-ballers-basketball'; 
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+            apiKey: "AIzaSyAj9Bbmwk0MxCnOTAEZUhQ373kAh0i4Uk0", 
+            authDomain: "mini-ballers-basketball.firebaseapp.com", 
+            projectId: "mini-ballers-basketball", 
+            storageBucket: "mini-ballers-basketball.firebasestorage.app", 
+            messagingSenderId: "299413634582", 
+            appId: "1:299413634582:web:8c1a6fcd8e972b5cc3ff37", 
+            measurementId: "G-MFB3F85CZT" 
+        };
+        const authToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        
+        // Data Structures
+        let groups = [];
+        let players = [];
+        let editingPlayerId = null; 
+        let currentPlayer = null; 
+
+        // --- FIREBASE PATH CONFIGURATION (STATIC MASTER COACH PATH) ---
+        // NEW: Define a static key to force a single Master Coach path for consistent access across environments.
+        const MASTER_COACH_KEY = "MINIBALLERS_COACH"; 
+        
+        const getGroupsCollectionRef = () => collection(db, `artifacts/${appId}/users/${MASTER_COACH_KEY}/groups`);
+        const getPlayersCollectionRef = () => collection(db, `artifacts/${appId}/users/${MASTER_COACH_KEY}/players`);
+        const getCoachConfigDocRef = () => doc(db, `artifacts/${appId}/users/${MASTER_COACH_KEY}/settings/coachConfig`);
+        // --------------------------------------------------------
+
+
+        // Define the medal tiers and their properties 
+        const MEDAL_TIERS = [
+            { threshold: 24, name: 'Red Medal', colorClass: 'bg-red-500', fill: '#ef4444' },
+            { threshold: 48, name: 'Green Medal', colorClass: 'bg-green-500', fill: '#22c55e' },
+            { threshold: 72, name: 'Blue Medal', colorClass: 'bg-blue-500', fill: '#3b82f6' },
+            { threshold: 96, name: 'Yellow Medal', colorClass: 'bg-yellow-400', fill: '#facc15' },
+            { threshold: 120, name: 'Pink Medal', colorClass: 'bg-pink-500', fill: '#ec4899' }
+        ];
+
+        // --- Utility Functions ---
+        
+        // The actual public logo URL
+        const PUBLIC_LOGO_URL = 'https://images.squarespace-cdn.com/content/v1/65b2d4a1c678dd102a9e1842/568740d1-fae0-4b0c-888d-3a4bd483dcd5/Logo+circle+transparent.png?format=500w'; 
+        
+        /**
+         * Returns the HTML for a single sticker using the logo image
+         */
+        const getStickerElement = () => {
+            // Note: the styling is in CSS using the background-image property
+            return `<div class="sticker-logo"></div>`;
+        };
+        
+        /**
+         * Converts a numerical sticker count into a medal status object.
+         * @param {number} count 
+         * @returns {{color: string, name: string}}
+         */
+        const getMedalStatus = (count) => {
+            if (count >= 120) return { color: 'bg-pink-500', name: 'Pink Medal (120+)' };
+            if (count >= 96) return { color: 'bg-yellow-400', name: 'Yellow Medal (96+)' };
+            if (count >= 72) return { color: 'bg-blue-500', name: 'Blue Medal (72+)' };
+            if (count >= 48) return { color: 'bg-green-500', name: 'Green Medal (48+)' };
+            if (count >= 24) return { color: 'bg-red-500', name: 'Red Medal (24+)' };
+            return { color: 'bg-gray-500', name: 'None (Next: Red at 24)' };
+        };
+        
+        /**
+         * Shows a non-blocking status message in the coach dashboard.
+         */
+        const showCoachStatus = (message, isError = false) => {
+            const el = document.getElementById('coach-status-message');
+            if (!el) return;
+            
+            el.textContent = message;
+            el.classList.remove('hidden', 'text-orange-300', 'border-accent', 'text-red-400', 'border-red-500', 'bg-red-900/20', 'bg-gray-900/50');
+            
+            if (isError) {
+                el.classList.add('text-red-400', 'border-red-500', 'bg-red-900/20');
+            } else {
+                el.classList.add('text-orange-300', 'border-accent', 'bg-gray-900/50');
+            }
+            
+            // Hide non-error messages after 8 seconds
+            if (!isError) {
+                setTimeout(() => {
+                    el.classList.add('hidden');
+                }, 8000); 
+            }
+        };
+        
+        /**
+         * Updates the state of the forms and displays a loading message.
+         */
+        const updateDashboardState = (ready) => {
+            isCoachReady = ready;
+            const groupForm = document.getElementById('group-form');
+            const playerForm = document.getElementById('player-form');
+            const passwordForm = document.getElementById('password-form');
+            const statusEl = document.getElementById('coach-status-message');
+
+            if (!groupForm || !playerForm || !passwordForm || !statusEl) return;
+
+            // Enable/Disable all form elements
+            [groupForm, playerForm, passwordForm].forEach(form => {
+                form.querySelectorAll('input, select, button').forEach(el => el.disabled = !ready);
+            });
+            
+            if (ready) {
+                if (statusEl.textContent.includes('Authenticating') || statusEl.textContent.includes('Dashboard ready')) {
+                    statusEl.classList.add('hidden');
+                }
+                // Also enable the bulk update button if it exists and a group is selected
+                const bulkBtn = document.getElementById('btn-add-stickers');
+                const bulkSelect = document.getElementById('bulk-group-select');
+                if (bulkBtn && bulkSelect && bulkSelect.value) {
+                    bulkBtn.disabled = false;
+                }
+            } else {
+                statusEl.classList.remove('hidden', 'text-red-400');
+                statusEl.classList.add('text-orange-300', 'border-accent', 'bg-gray-900/50');
+                statusEl.textContent = 'Authenticating and loading data. Please wait...';
+            }
+        }
+
+
+        const generate6DigitCode = () => {
+            return String(Math.floor(100000 + Math.random() * 900000));
+        };
+        
+        // --- Coach Config & Password Management ---
+
+/**
+ * Loads the coach password from Firestore. Initializes it if it doesn't exist.
+ */
+const loadCoachConfig = async () => {
+    if (!db) {
+        // We are in a dummy config scenario. Use the default password.
+        coachPassword = "12345678"; 
+        return;
+    }
+    
+    const defaultPassword = "12345678"; // Initial default password
+    
+    try {
+        const configRef = getCoachConfigDocRef();
+        const docSnap = await getDoc(configRef);
+
+        if (docSnap.exists()) {
+            coachPassword = docSnap.data().password;
+            console.log("Coach config loaded successfully.");
+        } else {
+            // Initialize config if it doesn't exist
+            await setDoc(configRef, { 
+                password: defaultPassword,
+                createdAt: new Date().toISOString()
+            });
+            coachPassword = defaultPassword;
+            console.log("Coach config initialized with default password.");
+        }
+    } catch (error) {
+        console.error("Error loading/initializing coach config (expected with dummy config):", error);
+        // Fallback to the default password if Firestore fails
+        coachPassword = defaultPassword; 
+    }
+};
+
+/**
+ * Handles the form submission to change the coach password.
+ */
+const handleChangeCoachPassword = async (e) => {
+    e.preventDefault();
+    if (!db || !isCoachReady) {
+        showCoachStatus("Cannot change password: Dashboard not ready. (NOTE: This operation fails with dummy config)", true);
+        return;
+    }
+
+    const form = e.target;
+    // FIX: Add .trim() to all inputs to prevent hidden spaces from failing validation
+    const currentPass = form.elements['current-password'].value.trim();
+    const newPass = form.elements['new-password'].value.trim();
+    const confirmPass = form.elements['confirm-password'].value.trim();
+
+    if (currentPass !== coachPassword) {
+        showCoachStatus("Current password is incorrect.", true);
+        return;
+    }
+
+    if (newPass.length < 6) {
+        showCoachStatus("New password must be at least 6 characters long.", true);
+        return;
+    }
+    
+    if (newPass !== confirmPass) {
+        showCoachStatus("New password and confirmation do not match.", true);
+        return;
+    }
+    
+    if (newPass === currentPass) {
+        showCoachStatus("New password cannot be the same as the current password.", true);
+        return;
+    }
+
+    try {
+        const configRef = getCoachConfigDocRef();
+        await updateDoc(configRef, { password: newPass });
+        coachPassword = newPass; // Update local state
+        form.reset();
+        showCoachStatus("Coach password updated successfully!");
+    } catch (error) {
+        console.error("Error updating coach password:", error);
+        showCoachStatus(`Failed to update password. (NOTE: This error is expected if using dummy config)`, true);
+    }
+};
+        
+        // --- Medal Progress Calculation ---
+
+        /**
+         * Calculates progress towards all medal tiers for the visualization.
+         */
+        const getMedalProgressData = (currentCount) => {
+            let nextThresholdFound = false;
+            let medalData = [];
+
+            for (let i = 0; i < MEDAL_TIERS.length; i++) {
+                const tier = MEDAL_TIERS[i];
+                const medalEarned = currentCount >= tier.threshold;
+                
+                let progress = 0;
+                
+                if (medalEarned) {
+                    progress = 100;
+                } else if (!nextThresholdFound) {
+                    const prevThreshold = i > 0 ? MEDAL_TIERS[i - 1].threshold : 0;
+                    const required = tier.threshold - prevThreshold;
+                    const currentProgress = currentCount - prevThreshold;
+
+                    if (currentCount >= prevThreshold) {
+                         progress = Math.min(100, Math.round((currentProgress / required) * 100));
+                    }
+                    nextThresholdFound = true; 
+                }
+                
+                medalData.push({
+                    id: tier.name.toLowerCase().split(' ')[0],
+                    title: tier.name.replace(' Medal', ''), 
+                    fill: tier.fill,
+                    progress: progress,
+                    medal: medalEarned,
+                    threshold: tier.threshold
+                });
+            }
+            return medalData;
+        };
+
+
+        // --- Navigation and View Rendering ---
+
+        const switchView = (viewName, data = null) => {
+            window.scrollTo(0, 0); 
+            const app = document.getElementById('app');
+            app.innerHTML = '';
+            
+            currentPlayer = null;
+
+            switch (viewName) {
+                case 'landing':
+                    window.location.hash = '';
+                    renderLanding();
+                    break;
+                case 'coach-login':
+                    window.location.hash = '#coach';
+                    renderCoachLogin();
+                    break;
+                case 'coach-dashboard':
+                    window.location.hash = '#coach/dashboard';
+                    renderCoachDashboard();
+                    break;
+                case 'player-lookup':
+                    window.location.hash = '#player';
+                    renderPlayerLookup();
+                    break;
+                case 'player-view':
+                    if (data) {
+                         window.location.hash = `#player/${data.accessCode}`;
+                         renderPlayerView(data);
+                    } else {
+                        renderPlayerLookup(); 
+                    }
+                    break;
+                default:
+                    renderLanding();
+            }
+        };
+
+        // Expose functions globally for inline HTML event handlers
+        window.switchView = switchView; 
+        
+        const renderLanding = () => {
+            const app = document.getElementById('app');
+            isCoachReady = false;
+            
+            app.innerHTML = `
+                <div class="text-center container-card max-w-sm mx-auto p-6 md:p-8">
+                    <h1 class="text-3xl font-black text-accent mb-4">
+                        Mini Ballers Basketball
+                    </h1>
+                    <h2 class="text-xl font-bold text-gray-300 mb-8">
+                        Sticker Book
+                    </h2>
+                    <img src="${PUBLIC_LOGO_URL}" onerror="this.onerror=null;this.src='https://placehold.co/160x160/111/FF8C00?text=Logo';" alt="Mini Ballers Basketball Logo" class="w-40 h-40 mx-auto mb-10 rounded-full bg-black p-2 object-contain border-2 border-accent">
+
+                    <div class="space-y-4">
+                        <button id="btn-player-view" class="btn-primary w-full">
+                            Player View
+                        </button>
+                        <button id="btn-coach-dashboard" class="btn-primary w-full">
+                            Coach Dashboard
+                        </button>
+                    </div>
+                    <p class="mt-8 text-sm text-gray-500">App ID: ${appId}</p>
+                </div>
+            `;
+
+            document.getElementById('btn-player-view').addEventListener('click', () => switchView('player-lookup'));
+            document.getElementById('btn-coach-dashboard').addEventListener('click', () => switchView('coach-login'));
+        };
+
+        // --- Player View Logic ---
+        
+        const handlePlayerLookup = async (code) => {
+             const messageEl = document.getElementById('lookup-message');
+             if (messageEl) messageEl.textContent = "Searching...";
+             
+             // Check if the app is running in a fully connected (non-dummy) state
+             if (!db || !isAuthReady) {
+                 if (messageEl) messageEl.textContent = "Code not found. The app is running with a DUMMY CONFIGURATION and cannot access saved player data.";
+                 console.error("Attempted lookup before authentication was ready or with dummy config.");
+                 
+                 // Mock a player for public viewing if lookup fails or for testing
+                 if (code === "123456") {
+                    const mockPlayer = {
+                        name: "Mock Player",
+                        stickerCount: 78,
+                        accessCode: "123456",
+                        groupId: "mock-group-1"
+                    };
+                    // Injecting MOCK group data for public view to show what it SHOULD look like
+                    groups = [{id: "mock-group-1", name: "Mock Team A", location: "Mock Court"}];
+                    currentPlayer = mockPlayer;
+                    
+                    // Pass the mock group data for rendering
+                    switchView('player-view', { ...mockPlayer, group: groups[0] });
+                    return;
+                 } else {
+                    return;
+                 }
+             }
+             
+             try {
+                // Lookup player data
+                const playersRef = getPlayersCollectionRef(); 
+                const q = query(playersRef, where("accessCode", "==", code));
+                const playerSnapshot = await getDocs(q);
+
+                if (!playerSnapshot.empty) {
+                    const playerData = playerSnapshot.docs[0].data();
+                    const groupId = playerData.groupId;
+
+                    // --- NEW: FETCH THE GROUP DOCUMENT ---
+                    const groupRef = doc(db, `artifacts/${appId}/users/${MASTER_COACH_KEY}/groups`, groupId);
+                    const groupSnapshot = await getDoc(groupRef);
+                    
+                    let groupData = null;
+                    if (groupSnapshot.exists()) {
+                        groupData = { id: groupSnapshot.id, ...groupSnapshot.data() };
+                    } else {
+                        console.warn(`Group ID ${groupId} not found for player ${playerData.name}`);
+                        groupData = { name: 'Unknown Group', location: 'N/A' };
+                    }
+                    // --- END NEW FETCH ---
+
+                    currentPlayer = playerData;
+                    
+                    // Pass the group data along with player data to the render function
+                    switchView('player-view', { ...playerData, group: groupData });
+                } else {
+                    if (messageEl) messageEl.textContent = "Code not found. Please check and try again.";
+                }
+            } catch (error) {
+                console.error("Error looking up player:", error);
+                if (messageEl) messageEl.textContent = "An error occurred during lookup. Please try again.";
+            }
+        }
+        
+        /**
+         * Renders the circular medal progress graphic.
+         */
+        const renderMedalProgressGraphic = (stickerCount) => {
+            const progressData = getMedalProgressData(stickerCount);
+            
+            return `
+                <div class="flex flex-wrap justify-center gap-4 py-4 border-t border-b border-gray-800 my-6">
+                    ${progressData.map(item => `
+                        <div class="flex flex-col items-center">
+                            <div 
+                                id="progress-${item.id}"
+                                class="progress-circle shadow-lg transition-all duration-300 ${item.medal ? 'ring-2 ring-offset-2 ring-offset-black ring-accent ring-opacity-70' : ''}" 
+                                style="--fill-color: ${item.fill}; --progress: ${item.progress}%;"
+                                title="${item.title} (${item.progress}%)"
+                            >
+                                <span class="progress-text">${item.medal ? '✓' : item.progress + '%'}</span>
+                            </div>
+                            <span class="mt-2 text-xs font-medium text-gray-400">${item.title} (${item.threshold})</span>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+
+        const renderPlayerView = (playerData) => {
+            const app = document.getElementById('app');
+            const medal = getMedalStatus(playerData.stickerCount); 
+            const stickers = Array(playerData.stickerCount).fill(getStickerElement()); 
+            
+            // --- CHANGE: Use the group object passed in the playerData directly ---
+            // If the group property exists from handlePlayerLookup, use it. Otherwise, use a fallback.
+            const group = playerData.group || { name: 'Unknown Group', location: 'N/A' };
+
+            app.innerHTML = `
+                <div class="container-card mx-auto p-6 md:p-8">
+                    <div class="flex justify-between items-center mb-6 border-b border-gray-800 pb-4">
+                        <h2 class="text-3xl font-black text-accent">${playerData.name}</h2>
+                        <button id="btn-logout" class="text-gray-400 hover:text-accent font-semibold text-sm" onclick="switchView('landing')">
+                           Logout
+                        </button>
+                    </div>
+
+                    <div class="mb-6 p-4 rounded-lg shadow-inner ${medal.color} bg-opacity-20 flex flex-col sm:flex-row justify-between items-center">
+                        <p class="text-xl font-bold text-white">${medal.name}</p>
+                        <p class="text-lg font-semibold text-white mt-2 sm:mt-0">${playerData.stickerCount} Stickers</p>
+                    </div>
+                    
+                    ${renderMedalProgressGraphic(playerData.stickerCount)}
+                    
+                    <div class="mb-6 p-4 bg-gray-900 rounded-lg text-sm">
+                         <p>Group: <span class="font-semibold text-accent">${group.name} (${group.location})</span></p>
+                         <p>Access Code: <span class="font-mono text-white">${playerData.accessCode}</span></p>
+                    </div>
+
+
+                    <h3 class="text-xl font-bold text-gray-300 mb-4">Collected Stickers (${playerData.stickerCount})</h3>
+                    
+                    <div class="grid grid-cols-6 sm:grid-cols-8 md:grid-cols-10 gap-3 max-h-96 overflow-y-auto p-2 rounded-lg bg-gray-900 border border-gray-800">
+                        ${stickers.map(el => `<div class="flex justify-center items-center">${el}</div>`).join('')}
+                    </div>
+
+                    <div class="mt-6 text-center">
+                        <button id="btn-new-lookup" class="text-gray-400 hover:text-accent font-semibold text-sm" onclick="switchView('player-lookup')">
+                            Look Up Another Player
+                        </button>
+                    </div>
+                </div>
+            `;
+        };
+        
+        // --- Coach Dashboard Logic ---
+
+        /**
+         * Renders the list of groups and populates the player group dropdown.
+         */
+        const renderGroupsList = () => {
+            const listEl = document.getElementById('groups-list');
+            const selectEl = document.getElementById('player-group');
+            if (!listEl || !selectEl) return;
+
+            listEl.innerHTML = groups.map(group => `
+                <div class="flex justify-between items-center bg-gray-900 p-3 rounded-lg border border-gray-800">
+                    <span class="text-sm font-semibold">${group.name} (${group.location})</span>
+                    <button onclick="window.deleteGroup('${group.id}')" class="text-red-500 hover:text-red-400 text-xs py-1 px-2 rounded-full border border-red-500">
+                        Delete
+                    </button>
+                </div>
+            `).join('');
+
+            // Populate Player Group Select for ADD PLAYER form
+            selectEl.innerHTML = '<option value="">Select Group</option>' + groups.map(group => `
+                <option value="${group.id}">${group.name} (${group.location})</option>
+            `).join('');
+            
+            // NEW: Populate Bulk Sticker Group Select
+            const bulkSelectEl = document.getElementById('bulk-group-select');
+            if (bulkSelectEl) {
+                 // Preserve the selection when re-rendering
+                 const currentGroupId = bulkSelectEl.value;
+                 
+                 bulkSelectEl.innerHTML = '<option value="">Select Group to Award Stickers</option>' + groups.map(group => `
+                    <option value="${group.id}" ${group.id === currentGroupId ? 'selected' : ''}>${group.name} (${group.location})</option>
+                `).join('');
+                
+                // Re-render the bulk player list if a group was selected
+                if(currentGroupId) window.renderBulkPlayerList(currentGroupId);
+            }
+            
+            renderPlayersList();
+        };
+        
+        /**
+         * Renders the list of players for the Coach Dashboard.
+         */
+        const renderPlayersList = () => {
+            const listEl = document.getElementById('players-list');
+            if (!listEl) return;
+
+            listEl.innerHTML = players.map(player => {
+                const group = groups.find(g => g.id === player.groupId) || { name: 'N/A', location: '' };
+                const medal = getMedalStatus(player.stickerCount);
+                
+                const isEditing = editingPlayerId === player.id;
+                
+                if (isEditing) {
+                    // Editing view
+                    return `
+                        <div class="bg-gray-700 p-3 rounded-lg space-y-2">
+                            <input type="text" id="edit-name-${player.id}" value="${player.name}" class="w-full p-2 bg-gray-600 rounded text-sm text-white" placeholder="Name">
+                            <div class="flex space-x-2">
+                                <input type="number" id="edit-stickers-${player.id}" value="${player.stickerCount}" class="w-1/2 p-2 bg-gray-600 rounded text-sm text-white" min="0">
+                                <select id="edit-group-${player.id}" class="w-1/2 p-2 bg-gray-600 rounded text-sm text-white">
+                                    ${groups.map(g => `<option value="${g.id}" ${g.id === player.groupId ? 'selected' : ''}>${g.name} (${g.location})</option>`).join('')}
+                                </select>
+                            </div>
+                            <div class="text-xs text-gray-300 font-mono mt-1">Code: ${player.accessCode}</div>
+                            <div class="flex justify-end space-x-2">
+                                <button onclick="window.saveEditPlayer('${player.id}')" class="bg-green-600 hover:bg-green-500 text-white text-xs py-1 px-3 rounded">Save</button>
+                                <button onclick="window.cancelEditPlayer()" class="bg-gray-500 hover:bg-gray-400 text-white text-xs py-1 px-3 rounded">Cancel</button>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    // Display view
+                    return `
+                        <div class="flex justify-between items-center bg-gray-900 p-3 rounded-lg border border-gray-800">
+                            <div>
+                                <p class="text-sm font-semibold text-white">${player.name} <span class="text-gray-400 text-xs">(${group.name} - ${group.location})</span></p>
+                                <p class="text-xs ${medal.color} font-medium">${player.stickerCount} stickers | ${medal.name}</p>
+                                <p class="text-xs text-gray-500 font-mono mt-1">Code: ${player.accessCode}</p>
+                            </div>
+                            <div class="flex space-x-2">
+                                <button onclick="window.startEditPlayer('${player.id}')" class="text-accent hover:text-orange-400 text-xs py-1 px-2 rounded border border-accent">Edit</button>
+                                <button onclick="window.deletePlayer('${player.id}')" class="text-red-500 hover:text-red-400 text-xs py-1 px-2 rounded border border-red-500">Del</button>
+                            </div>
+                        </div>
+                    `;
+                }
+            }).join('');
+        };
+        
+        /**
+         * Renders the player list for the bulk sticker award section.
+         */
+        const renderBulkPlayerList = (groupId) => {
+            const bulkListEl = document.getElementById('bulk-player-list');
+            const bulkBtn = document.getElementById('btn-add-stickers');
+            if (!bulkListEl || !bulkBtn) return;
+
+            if (!groupId) {
+                bulkListEl.innerHTML = '<p class="text-gray-500 text-sm">Select a group above to see players.</p>';
+                bulkBtn.disabled = true;
+                return;
+            }
+
+            const filteredPlayers = players.filter(p => p.groupId === groupId);
+
+            if (filteredPlayers.length === 0) {
+                bulkListEl.innerHTML = '<p class="text-gray-500 text-sm">No players found in this group.</p>';
+                bulkBtn.disabled = true;
+                return;
+            }
+
+            bulkListEl.innerHTML = filteredPlayers.map(player => `
+                <label class="flex items-center justify-between bg-gray-800 p-2 rounded-lg cursor-pointer hover:bg-gray-700 transition">
+                    <span class="text-sm text-white">${player.name} <span class="text-xs text-gray-400">(${player.stickerCount} stickers)</span></span>
+                    <input type="checkbox" name="bulk-player-id" value="${player.id}" class="h-5 w-5 text-accent bg-gray-900 border-gray-600 rounded focus:ring-accent checked:bg-accent">
+                </label>
+            `).join('');
+            
+            bulkBtn.disabled = false;
+        };
+
+
+        /**
+         * Handles the submission of the "Add New Group" form.
+         */
+        const handleAddGroup = async (e) => {
+            e.preventDefault(); 
+            
+             if (!db || !isCoachReady) {
+                 showCoachStatus("Cannot add group: Please wait for dashboard data to finish loading and try again. (NOTE: This operation fails with dummy config)", true);
+                 return;
+             }
+
+            const form = e.target;
+            const name = form.elements['group-name'].value.trim();
+            const location = form.elements['group-location'].value.trim();
+
+            if (!name || !location) {
+                showCoachStatus("Group name and location are required.", true);
+                return;
+            }
+
+            try {
+                await addDoc(getGroupsCollectionRef(), { 
+                    name: name,
+                    location: location,
+                    createdAt: new Date().toISOString()
+                });
+                form.reset();
+                showCoachStatus(`Group '${name}' added successfully.`);
+            } catch (error) {
+                console.error("Error adding group:", error);
+                showCoachStatus(`Failed to add group. (NOTE: This error is expected if using dummy config)`, true);
+            }
+        };
+        
+        /**
+         * Handles the submission of the "Add New Player" form.
+         */
+        const handleAddPlayer = async (e) => {
+            e.preventDefault(); 
+            
+            if (!db || !isCoachReady) {
+                 showCoachStatus("Cannot add player: Please wait for dashboard data to finish loading and try again. (NOTE: This operation fails with dummy config)", true);
+                 return;
+             }
+
+            const form = e.target;
+            const name = form.elements['player-name'].value.trim();
+            const groupId = form.elements['player-group'].value;
+            const initialStickerCount = parseInt(form.elements['initial-sticker-count'].value, 10);
+
+            if (!name || !groupId) {
+                showCoachStatus("Player name and group selection are required.", true);
+                return;
+            }
+            if (isNaN(initialStickerCount) || initialStickerCount < 0) {
+                showCoachStatus("Initial sticker count must be a non-negative number.", true);
+                return;
+            }
+
+            try {
+                const accessCode = generate6DigitCode(); 
+
+                await addDoc(getPlayersCollectionRef(), { 
+                    name: name,
+                    groupId: groupId,
+                    stickerCount: initialStickerCount,
+                    accessCode: accessCode, 
+                    createdAt: new Date().toISOString()
+                });
+                form.reset();
+                showCoachStatus(`Player '${name}' added successfully. Access Code: ${accessCode}`);
+            } catch (error) {
+                console.error("Error adding player:", error);
+                showCoachStatus(`Failed to add player. (NOTE: This error is expected if using dummy config)`, true);
+            }
+        };
+        
+        /**
+         * Handles the bulk addition of stickers to selected players.
+         */
+        const handleAddBulkStickers = async () => {
+            if (!db || !isCoachReady) {
+                showCoachStatus("Cannot update stickers: Dashboard not ready. (NOTE: This operation fails with dummy config)", true);
+                return;
+            }
+            
+            const checkboxes = document.querySelectorAll('#bulk-player-list input[name="bulk-player-id"]:checked');
+            const selectedPlayerIds = Array.from(checkboxes).map(cb => cb.value);
+
+            if (selectedPlayerIds.length === 0) {
+                showCoachStatus("Please select at least one player to update.", true);
+                return;
+            }
+
+            // Optional Confirmation 
+            if (!confirm(`Are you sure you want to add 1 sticker to ${selectedPlayerIds.length} player(s)?`)) {
+                return;
+            }
+            
+            const groupSelect = document.getElementById('bulk-group-select');
+            const selectedGroupName = groupSelect.options[groupSelect.selectedIndex].text.split('(')[0].trim();
+            
+            showCoachStatus(`Updating stickers for ${selectedPlayerIds.length} players in ${selectedGroupName}...`);
+            
+            let successCount = 0;
+            try {
+                // Iterate and update each player
+                for (const playerId of selectedPlayerIds) {
+                    const playerRef = doc(db, `artifacts/${appId}/users/${MASTER_COACH_KEY}/players`, playerId); 
+                    // Find the current player object to get the current sticker count
+                    const player = players.find(p => p.id === playerId);
+                    
+                    if (player) {
+                        // Use updateDoc to set the new count (old + 1)
+                        await updateDoc(playerRef, {
+                            stickerCount: player.stickerCount + 1
+                        });
+                        successCount++;
+                    }
+                }
+                
+                // Uncheck all boxes
+                checkboxes.forEach(cb => cb.checked = false);
+                const selectedGroupId = groupSelect.value;
+                // Re-render the list to show the new sticker counts (though the listener will handle this shortly)
+                renderBulkPlayerList(selectedGroupId); 
+                
+                showCoachStatus(`Successfully added 1 sticker to ${successCount} player(s) in ${selectedGroupName}!`);
+
+            } catch (error) {
+                console.error("Error updating players in bulk:", error);
+                showCoachStatus(`Failed to update players. Only ${successCount} succeeded. (NOTE: This error is expected if using dummy config)`, true);
+            }
+        };
+
+
+        /**
+         * Sets up real-time data listeners for the Coach Dashboard.
+         */
+        const setupCoachDataListeners = () => {
+            if (!db || !isAuthReady) {
+                 updateDashboardState(true); // Treat as ready in dummy mode to allow UI interaction
+                 
+                 // MOCK DATA FOR PUBLIC VIEWING
+                 groups = [{id: "mock-group-1", name: "U8 Lions", location: "Court 1"}, {id: "mock-group-2", name: "U10 Tigers", location: "Court 2"}];
+                 players = [
+                    {id: "p1", name: "Jamie S.", groupId: "mock-group-1", stickerCount: 30, accessCode: "503211"},
+                    {id: "p2", name: "Alex B.", groupId: "mock-group-2", stickerCount: 80, accessCode: "123456"},
+                    {id: "p3", name: "Sarah K.", groupId: "mock-group-1", stickerCount: 125, accessCode: "654321"}
+                 ];
+                 
+                 renderGroupsList();
+                 showCoachStatus("Dashboard loaded with mock data. Real database functions are disabled.", true);
+                 return;
+            }
+            
+            console.log("Setting up Firestore listeners for Coach Data (Static Key: MINIBALLERS_COACH)...");
+
+            // Group Listener
+            onSnapshot(getGroupsCollectionRef(), (snapshot) => { 
+                groups = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                renderGroupsList();
+            }, (error) => {
+                console.error("FIREBASE ERROR (GROUPS):", error);
+                showCoachStatus(`Error loading groups. (NOTE: This error is expected if using dummy config)`, true);
+            });
+
+            // Player Listener (Used as the trigger for dashboard readiness)
+            onSnapshot(getPlayersCollectionRef(), (snapshot) => { 
+                players = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                renderPlayersList();
+                
+                // Also update the bulk list if a group is currently selected
+                const bulkSelect = document.getElementById('bulk-group-select');
+                if (bulkSelect && bulkSelect.value) {
+                    renderBulkPlayerList(bulkSelect.value);
+                }
+                
+                if (!isCoachReady) {
+                    updateDashboardState(true);
+                    showCoachStatus("Dashboard ready. You can now manage groups, players, and the coach password.");
+                }
+            }, (error) => {
+                console.error("FIREBASE ERROR (PLAYERS):", error);
+                showCoachStatus(`Error loading players. (NOTE: This error is expected if using dummy config)`, true);
+                updateDashboardState(false); 
+            });
+        };
+
+        // --- Coach Player/Group Actions ---
+
+        window.deleteGroup = async (groupId) => {
+            if (!db || !isCoachReady) {
+                 showCoachStatus("Cannot delete group: Dashboard not ready. (NOTE: This operation fails with dummy config)", true);
+                 return;
+             }
+             
+            try {
+                await deleteDoc(doc(db, `artifacts/${appId}/users/${MASTER_COACH_KEY}/groups`, groupId)); 
+                showCoachStatus("Group deleted successfully.");
+            } catch (error) {
+                console.error("Error deleting group:", error);
+                showCoachStatus(`Failed to delete group. (NOTE: This error is expected if using dummy config)`, true);
+            }
+        };
+        
+        window.deletePlayer = async (playerId) => { 
+            if (!db || !isCoachReady) {
+                 showCoachStatus("Cannot delete player: Dashboard not ready. (NOTE: This operation fails with dummy config)", true);
+                 return;
+             }
+             
+            try {
+                await deleteDoc(doc(db, `artifacts/${appId}/users/${MASTER_COACH_KEY}/players`, playerId)); 
+                showCoachStatus("Player deleted successfully.");
+            } catch (error) {
+                console.error("Error deleting player:", error);
+                showCoachStatus(`Failed to delete player. (NOTE: This error is expected if using dummy config)`, true);
+            }
+        };
+        
+        window.startEditPlayer = (playerId) => { 
+            editingPlayerId = playerId;
+            renderPlayersList();
+        };
+        
+        window.cancelEditPlayer = () => { 
+            editingPlayerId = null;
+            renderPlayersList();
+        };
+        
+        window.saveEditPlayer = async (playerId) => { 
+            if (!db || !isCoachReady) {
+                 showCoachStatus("Cannot save player: Dashboard not ready. (NOTE: This operation fails with dummy config)", true);
+                 return;
+             }
+             
+            const nameEl = document.getElementById(`edit-name-${playerId}`);
+            const stickersEl = document.getElementById(`edit-stickers-${playerId}`);
+            const groupEl = document.getElementById(`edit-group-${playerId}`);
+            
+            const newName = nameEl.value.trim();
+            const newStickers = parseInt(stickersEl.value, 10);
+            const newGroupId = groupEl.value;
+
+            if (!newName || !newGroupId || isNaN(newStickers) || newStickers < 0) {
+                 showCoachStatus("Invalid input for player update.", true);
+                 return;
+            }
+
+            try {
+                const playerRef = doc(db, `artifacts/${appId}/users/${MASTER_COACH_KEY}/players`, playerId); 
+                await updateDoc(playerRef, {
+                    name: newName,
+                    groupId: newGroupId,
+                    stickerCount: newStickers
+                });
+                editingPlayerId = null;
+                showCoachStatus(`Player '${newName}' updated successfully.`);
+            } catch (error) {
+                console.error("Error updating player:", error);
+                showCoachStatus(`Failed to update player. (NOTE: This error is expected if using dummy config)`, true);
+            }
+        };
+
+
+        // Expose new functions globally for event handlers
+        window.handleAddGroup = handleAddGroup;
+        window.handleAddPlayer = handleAddPlayer; 
+        window.setupCoachDataListeners = setupCoachDataListeners;
+        window.updateDashboardState = updateDashboardState;
+        window.handleChangeCoachPassword = handleChangeCoachPassword;
+        window.renderBulkPlayerList = renderBulkPlayerList; // NEWLY exposed
+        window.handleAddBulkStickers = handleAddBulkStickers; // NEWLY exposed
+
+        
+        const renderPlayerLookup = () => {
+             const app = document.getElementById('app');
+             app.innerHTML = `
+                 <div class="text-center container-card mx-auto max-w-sm p-6 md:p-8">
+                     <h2 class="text-2xl font-bold text-accent mb-6">Player Sticker Lookup</h2>
+                     <p class="text-gray-300 mb-6">Enter your child's 6-digit access code (Try 123456).</p>
+                     
+                     <input type="text" id="player-code-input" maxlength="6" 
+                         class="w-full p-3 mb-4 text-center text-lg tracking-widest bg-gray-800 border border-accent rounded-lg focus:ring-2 focus:ring-accent focus:border-accent uppercase" 
+                         placeholder="______">
+                     
+                     <div id="lookup-message" class="text-red-400 mb-4 h-6"></div>
+
+                     <button id="btn-lookup" class="btn-primary w-full mb-4">
+                         View Stickers
+                     </button>
+                     <button id="btn-back" class="text-gray-400 hover:text-accent font-semibold text-sm" onclick="switchView('landing')">
+                         ← Back to Home
+                     </button>
+                 </div>
+             `;
+
+             document.getElementById('btn-lookup').addEventListener('click', async () => {
+                 const code = document.getElementById('player-code-input').value.trim();
+                 if (code.length === 6) {
+                     await handlePlayerLookup(code);
+                 } else {
+                     document.getElementById('lookup-message').textContent = "Please enter a valid 6-digit code.";
+                 }
+             });
+         };
+         
+         const renderCoachLogin = () => {
+             const app = document.getElementById('app');
+             app.innerHTML = `
+                 <div class="text-center container-card mx-auto max-w-sm p-6 md:p-8">
+                     <h2 class="text-2xl font-bold text-accent mb-6">Coach Dashboard Access</h2>
+                     <p class="text-gray-300 mb-6">Enter the coach password (Try 12345678).</p>
+                     
+                     <input type="password" id="coach-password-input" 
+                         class="w-full p-3 mb-4 text-center text-lg tracking-wider bg-gray-800 border border-accent rounded-lg focus:ring-2 focus:ring-accent focus:border-accent" 
+                         placeholder="Password">
+                     
+                     <div id="login-message" class="text-red-400 mb-4 h-6"></div>
+
+                     <button id="btn-login" class="btn-primary w-full mb-4">
+                         Login
+                     </button>
+                     <button id="btn-back" class="text-gray-400 hover:text-accent font-semibold text-sm" onclick="switchView('landing')">
+                         ← Back to Home
+                     </button>
+                 </div>
+             `;
+             
+             const passwordInput = document.getElementById('coach-password-input');
+             const loginBtn = document.getElementById('btn-login');
+
+             const handleLogin = () => {
+                 const password = passwordInput.value.trim();
+                 const messageEl = document.getElementById('login-message');
+
+                 // Check against the loaded password
+                 if (password === coachPassword) {
+                     switchView('coach-dashboard');
+                 } else {
+                     messageEl.textContent = "Incorrect password. Try again.";
+                 }
+             };
+             
+             loginBtn.addEventListener('click', handleLogin);
+             passwordInput.addEventListener('keydown', (e) => {
+                 if (e.key === 'Enter') {
+                     handleLogin();
+                 }
+             });
+         };
+         
+         const renderCoachDashboard = () => {
+             const app = document.getElementById('app');
+             
+             console.log("Coach Dashboard rendered. Static Key:", MASTER_COACH_KEY);
+             
+             app.innerHTML = `
+                 <div class="container-card p-4 md:p-8">
+                     <div class="flex justify-between items-center mb-6 border-b border-gray-800 pb-4">
+                         <h2 class="text-3xl font-black text-accent">Coach Dashboard</h2>
+                         <button id="btn-logout-coach" class="text-gray-400 hover:text-accent font-semibold text-sm" onclick="switchView('landing')">
+                            Logout
+                         </button>
+                     </div>
+                     
+                     <div id="coach-status-message" class="mb-4 p-3 rounded-lg text-sm text-center bg-gray-900 border">
+                        Authenticating and loading data. Please wait...
+                     </div>
+
+                     <div class="md:flex md:space-x-8">
+                         <div class="md:w-1/2 mb-8 md:mb-0">
+                             
+                             <h3 class="text-xl font-bold text-gray-300 mb-4 border-b border-gray-700 pb-2">Change Coach Password</h3>
+                             <form id="password-form" onsubmit="window.handleChangeCoachPassword(event)" class="space-y-2 mb-8 bg-gray-900 p-4 rounded-lg">
+                                 <input type="password" id="current-password" name="current-password" class="w-full p-2 bg-gray-800 border border-gray-700 rounded text-sm focus:ring-accent focus:border-accent" placeholder="Current Password" required>
+                                 <input type="password" id="new-password" name="new-password" class="w-full p-2 bg-gray-800 border border-gray-700 rounded text-sm focus:ring-accent focus:border-accent" placeholder="New Password (min 6 chars)" required minlength="6">
+                                 <input type="password" id="confirm-password" name="confirm-password" class="w-full p-2 bg-gray-800 border border-gray-700 rounded text-sm focus:ring-accent focus:border-accent" placeholder="Confirm New Password" required minlength="6">
+                                 <button type="submit" class="btn-primary w-full text-sm">Update Password</button>
+                             </form>
+
+                             <h3 class="text-xl font-bold text-gray-300 mb-4 border-b border-gray-700 pb-2">Manage Groups</h3>
+                             <form id="group-form" onsubmit="window.handleAddGroup(event)" class="space-y-2 mb-4 bg-gray-900 p-4 rounded-lg">
+                                 <input type="text" id="group-name" class="w-full p-2 bg-gray-800 border border-gray-700 rounded text-sm focus:ring-accent focus:border-accent" placeholder="Group Name (e.g., U8 Giants)" required>
+                                 <input type="text" id="group-location" class="w-full p-2 bg-gray-800 border border-gray-700 rounded text-sm focus:ring-accent focus:border-accent" placeholder="Location (e.g., City Sports Hall)" required>
+                                 <button type="submit" class="btn-primary w-full text-sm">Add New Group</button>
+                             </form>
+                             <div id="groups-list" class="space-y-2 max-h-48 overflow-y-auto"></div>
+                         </div>
+
+                         <div class="md:w-1/2">
+                             
+                             <h3 class="text-xl font-bold text-gray-300 mb-4 border-b border-gray-700 pb-2">Bulk Sticker Award</h3>
+                             <div class="space-y-4 mb-8 bg-gray-900 p-4 rounded-lg">
+                                 <p class="text-sm text-gray-300">1. Select a group and check players who attended to award them 1 sticker each.</p>
+                                 <select id="bulk-group-select" onchange="window.renderBulkPlayerList(this.value)" class="w-full p-2 bg-gray-800 border border-gray-700 rounded text-sm focus:ring-accent focus:border-accent">
+                                     <option value="">Select Group to Award Stickers</option>
+                                 </select>
+                                 
+                                 <div id="bulk-player-list" class="space-y-2 max-h-48 overflow-y-auto p-2 bg-gray-800 rounded-lg border border-gray-700">
+                                     <p class="text-gray-500 text-sm">Select a group above to see players.</p>
+                                 </div>
+                                 
+                                 <button id="btn-add-stickers" onclick="window.handleAddBulkStickers()" class="btn-primary w-full text-sm" disabled>
+                                     Award 1 Sticker to Selected Players
+                                 </button>
+                             </div>
+                             <h3 class="text-xl font-bold text-gray-300 mb-4 border-b border-gray-700 pb-2">Manage Players</h3>
+                             <form id="player-form" onsubmit="window.handleAddPlayer(event)" class="space-y-2 mb-4 bg-gray-900 p-4 rounded-lg">
+                                 <input type="text" id="player-name" class="w-full p-2 bg-gray-800 border border-gray-700 rounded text-sm focus:ring-accent focus:border-accent" placeholder="Player Name" required>
+                                 <select id="player-group" class="w-full p-2 bg-gray-800 border border-gray-700 rounded text-sm focus:ring-accent focus:border-accent" required>
+                                     <option value="">Select Group</option>
+                                 </select>
+                                 <input type="number" id="initial-sticker-count" class="w-full p-2 bg-gray-800 border border-gray-700 rounded text-sm focus:ring-accent focus:border-accent" placeholder="Initial Sticker Count (0 if new)" value="0" min="0">
+                                 
+                                 <button type="submit" class="btn-primary w-full text-sm">Add New Player</button>
+                             </form>
+                             <div id="players-list" class="space-y-2 max-h-96 overflow-y-auto"></div>
+                         </div>
+                     </div>
+                 </div>
+             `;
+             
+             // The listeners setup handles updating the state and populating the lists
+             window.setupCoachDataListeners();
+         };
+
+
+        // --- Initialization ---
+        
+        /**
+         * Sets up the Firebase authentication state and initiates data listeners.
+         */
+        const setupAuthAndListeners = async () => {
+             try {
+                 
+                 // 1. Authenticate (Anonymous Sign-In)
+                 if (authToken) {
+                     await signInWithCustomToken(auth, authToken);
+                 } else {
+                     await signInAnonymously(auth);
+                 }
+                 
+                 // 2. Wait for the Auth state to settle and get the user ID
+                 // This user ID is still needed for the Firebase security rules (read/write access)
+                 const user = await new Promise((resolve) => {
+                     const unsubscribe = onAuthStateChanged(auth, (u) => {
+                         unsubscribe();
+                         resolve(u);
+                     });
+                 });
+                 
+                 isAuthReady = true; 
+                 if (user) {
+                     userId = user.uid;
+                 } else {
+                     // This should not happen with successful anonymous sign-in, but as a safety measure
+                     userId = crypto.randomUUID(); 
+                 }
+                 
+                 // 3. Load the coach password (will create the default '12345678' if it doesn't exist)
+                 // NOTE: The password is loaded from the static MASTER_COACH_KEY path, not the user.uid path.
+                 await loadCoachConfig();
+                 
+                 // 4. Initial View Render
+                 const hash = window.location.hash;
+                 if (hash.startsWith('#player/')) {
+                     const code = hash.substring(8);
+                     handlePlayerLookup(code);
+                 } else if (hash === '#coach/dashboard') {
+                      // Note: Dashboard view calls setupCoachDataListeners which loads groups/players
+                      renderCoachDashboard(); 
+                 } else if (hash === '#coach') {
+                      renderCoachLogin();
+                 } else {
+                     renderLanding();
+                 }
+
+             } catch (error) {
+                 console.error("Firebase Auth or Init Error:", error);
+                 document.getElementById('app').innerHTML = `<div class="p-8 text-center text-red-500 container-card max-w-sm mx-auto">
+                     App failed to connect to Firebase. Check your keys and rules. Error: ${error.message}
+                 </div>`;
+             }
+        };
+
+
+        const initFirebase = async () => {
+             if (firebaseConfig.apiKey === "DUMMY_API_KEY") {
+                 console.warn("WARNING: Using DUMMY Firebase configuration. The application UI will load, but all database operations will fail.");
+                 
+                 // Introduce a small artificial delay so the user sees the 'Loading' message briefly
+                 await new Promise(resolve => setTimeout(resolve, 500)); 
+                 
+                 // In case of dummy config, skip full Firebase init and manually trigger the rendering logic
+                 auth = { currentUser: { uid: crypto.randomUUID() } }; // Mock auth object
+                 db = null; // Mark database as unavailable
+                 isAuthReady = true;
+                 userId = crypto.randomUUID();
+                 
+                 // Manually run the load/render logic that onAuthStateChanged would handle
+                 await loadCoachConfig(); // Will set password to default (12345678)
+                 renderLanding();
+                 return;
+             }
+
+             try {
+                 const app = initializeApp(firebaseConfig);
+                 db = getFirestore(app);
+                 auth = getAuth(app);
+                 
+                 setLogLevel('Debug');
+                 
+                 await setupAuthAndListeners();
+
+             } catch (error) {
+                 console.error("App Initialization Error:", error);
+                 document.getElementById('app').innerHTML = `<div class="p-8 text-center text-red-500 container-card max-w-sm mx-auto">
+                     App failed to initialize. Error: ${error.message}
+                 </div>`;
+             }
+        };
+
+        // Execute immediately when the script block is parsed
+        initFirebase(); 
+
+    </script>
+</body>
+</html>
